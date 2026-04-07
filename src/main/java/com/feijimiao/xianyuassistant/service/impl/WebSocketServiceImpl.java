@@ -1,7 +1,9 @@
 package com.feijimiao.xianyuassistant.service.impl;
 
 import com.feijimiao.xianyuassistant.config.WebSocketConfig;
+import com.feijimiao.xianyuassistant.constants.OperationConstants;
 import com.feijimiao.xianyuassistant.service.AccountService;
+import com.feijimiao.xianyuassistant.service.OperationLogService;
 import com.feijimiao.xianyuassistant.service.WebSocketService;
 import com.feijimiao.xianyuassistant.service.WebSocketTokenService;
 import com.feijimiao.xianyuassistant.utils.XianyuSignUtils;
@@ -47,6 +49,9 @@ public class WebSocketServiceImpl implements WebSocketService {
     
     @Autowired
     private com.feijimiao.xianyuassistant.utils.AccountDisplayNameUtils displayNameUtils;
+    
+    @Autowired
+    private OperationLogService operationLogService;
 
     // 存储WebSocket客户端
     private final Map<Long, XianyuWebSocketClient> webSocketClients = new ConcurrentHashMap<>();
@@ -293,15 +298,48 @@ public class WebSocketServiceImpl implements WebSocketService {
                 log.info("WebSocket连接成功: accountId={}", accountId);
                 log.info("连接状态: isOpen={}, isClosed={}", 
                         client.isOpen(), client.isClosed());
+                
+                // 记录操作日志
+                operationLogService.log(accountId, 
+                    OperationConstants.Type.CONNECT, 
+                    OperationConstants.Module.WEBSOCKET,
+                    "WebSocket连接成功", 
+                    OperationConstants.Status.SUCCESS,
+                    OperationConstants.TargetType.WEBSOCKET, 
+                    String.valueOf(accountId),
+                    null, null, null, null);
+                
                 return true;
             } else {
                 log.error("WebSocket连接失败: accountId={}", accountId);
                 log.error("连接状态: isOpen={}, isClosed={}", 
                         client.isOpen(), client.isClosed());
+                
+                // 记录操作日志
+                operationLogService.log(accountId, 
+                    OperationConstants.Type.CONNECT, 
+                    OperationConstants.Module.WEBSOCKET,
+                    "WebSocket连接失败", 
+                    OperationConstants.Status.FAIL,
+                    OperationConstants.TargetType.WEBSOCKET, 
+                    String.valueOf(accountId),
+                    null, null, null, null);
+                
                 return false;
             }
         } catch (Exception e) {
             log.error("连接WebSocket异常: accountId={}", accountId, e);
+            
+            // 记录操作日志
+            operationLogService.log(accountId, 
+                OperationConstants.Type.CONNECT, 
+                OperationConstants.Module.WEBSOCKET,
+                "WebSocket连接异常: " + e.getMessage(), 
+                OperationConstants.Status.FAIL,
+                OperationConstants.TargetType.WEBSOCKET, 
+                String.valueOf(accountId),
+                null, null, null, null);
+            
             throw e;
         }
     }
@@ -319,6 +357,17 @@ public class WebSocketServiceImpl implements WebSocketService {
             if (client != null) {
                 client.close();
                 log.info("WebSocket连接已关闭: accountId={}", accountId);
+                
+                // 记录操作日志
+                operationLogService.log(accountId, 
+                    OperationConstants.Type.DISCONNECT, 
+                    OperationConstants.Module.WEBSOCKET,
+                    "WebSocket连接已关闭", 
+                    OperationConstants.Status.SUCCESS,
+                    OperationConstants.TargetType.WEBSOCKET, 
+                    String.valueOf(accountId),
+                    null, null, null, null);
+                
                 return true;
             } else {
                 log.warn("WebSocket连接不存在: accountId={}", accountId);
@@ -478,7 +527,9 @@ public class WebSocketServiceImpl implements WebSocketService {
             
             // 检查是否是主动重启
             Boolean restartFlag = connectionRestartFlags.get(accountId);
-            if (restartFlag != null && restartFlag) {
+            boolean isManualRestart = restartFlag != null && restartFlag;
+            
+            if (isManualRestart) {
                 log.info("【账号{}】主动重启连接，立即重连...", accountId);
             } else {
                 log.info("【账号{}】等待{}秒后重连...", accountId, config.getReconnectDelay());
@@ -496,11 +547,41 @@ public class WebSocketServiceImpl implements WebSocketService {
             
             if (success) {
                 log.info("【账号{}】✅ 重连成功", accountId);
+                
+                // 记录操作日志
+                operationLogService.log(accountId, 
+                    OperationConstants.Type.RECONNECT, 
+                    OperationConstants.Module.WEBSOCKET,
+                    isManualRestart ? "主动重启连接成功" : "异常断开后重连成功", 
+                    OperationConstants.Status.SUCCESS,
+                    OperationConstants.TargetType.WEBSOCKET, 
+                    String.valueOf(accountId),
+                    null, null, null, null);
             } else {
                 log.error("【账号{}】❌ 重连失败", accountId);
+                
+                // 记录操作日志
+                operationLogService.log(accountId, 
+                    OperationConstants.Type.RECONNECT, 
+                    OperationConstants.Module.WEBSOCKET,
+                    isManualRestart ? "主动重启连接失败" : "异常断开后重连失败", 
+                    OperationConstants.Status.FAIL,
+                    OperationConstants.TargetType.WEBSOCKET, 
+                    String.valueOf(accountId),
+                    null, null, null, null);
             }
         } catch (Exception e) {
             log.error("【账号{}】重连异常", accountId, e);
+            
+            // 记录操作日志
+            operationLogService.log(accountId, 
+                OperationConstants.Type.RECONNECT, 
+                OperationConstants.Module.WEBSOCKET,
+                "重连异常: " + e.getMessage(), 
+                OperationConstants.Status.FAIL,
+                OperationConstants.TargetType.WEBSOCKET, 
+                String.valueOf(accountId),
+                null, null, null, null);
         }
     }
     
