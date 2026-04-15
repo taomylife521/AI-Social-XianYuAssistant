@@ -51,6 +51,12 @@ public class XianyuWebSocketClient extends WebSocketClient {
     
     // 心跳响应回调
     private Runnable onHeartbeatResponse;
+    
+    // 连接关闭回调（参考Python的finally重连逻辑）
+    private Runnable onConnectionClosed;
+    
+    // 是否为主动关闭（防止主动关闭时触发重连）
+    private volatile boolean intentionalClose = false;
 
     public XianyuWebSocketClient(URI serverUri, Map<String, String> headers, String accountId, AccountDisplayNameUtils displayNameUtils) {
         super(serverUri, headers);
@@ -105,6 +111,21 @@ public class XianyuWebSocketClient extends WebSocketClient {
      */
     public void setOnHeartbeatResponse(Runnable callback) {
         this.onHeartbeatResponse = callback;
+    }
+    
+    /**
+     * 设置连接关闭回调
+     * 参考Python的finally块中的重连逻辑
+     */
+    public void setOnConnectionClosed(Runnable callback) {
+        this.onConnectionClosed = callback;
+    }
+    
+    /**
+     * 标记为主动关闭（防止关闭时触发重连回调）
+     */
+    public void setIntentionalClose(boolean intentional) {
+        this.intentionalClose = intentional;
     }
 
     @Override
@@ -454,6 +475,21 @@ public class XianyuWebSocketClient extends WebSocketClient {
         if (messageExecutor != null && !messageExecutor.isShutdown()) {
             messageExecutor.shutdown();
             log.debug("{}消息处理线程池已关闭", logPrefix());
+        }
+        
+        // 触发连接关闭回调（参考Python的finally块中重连逻辑）
+        // 但如果是主动关闭（如Token刷新重连），则不触发回调，由调用方自行处理重连
+        if (!intentionalClose && onConnectionClosed != null) {
+            try {
+                log.info("{}触发连接关闭回调，准备自动重连...", logPrefix());
+                onConnectionClosed.run();
+            } catch (Exception e) {
+                log.error("{}连接关闭回调执行失败", logPrefix(), e);
+            }
+        } else if (intentionalClose) {
+            log.info("{}主动关闭连接，不触发自动重连回调", logPrefix());
+            // 重置标志，以便下次连接可以正常触发
+            intentionalClose = false;
         }
     }
 

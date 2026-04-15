@@ -337,6 +337,52 @@ public class TokenRefreshServiceImpl implements TokenRefreshService {
     }
 
     /**
+     * 定时任务：通过hasLogin检查并刷新Cookie
+     * 参考Python逻辑：每次get_token前都会检查Cookie是否有效
+     * Python通过hasLogin来保持Cookie活跃，防止Cookie过期导致WebSocket掉线
+     * 
+     * 间隔30分钟，在_m_h5_tk刷新间隔（2小时）之间提供额外的Cookie保活
+     */
+    @Scheduled(fixedDelay = 30 * 60 * 1000, initialDelay = 5 * 60 * 1000)
+    public void scheduledCookieKeepAlive() {
+        try {
+            log.info("🔄 开始定期Cookie保活检查...");
+            
+            List<XianyuAccount> accounts = accountMapper.selectList(null);
+            int successCount = 0;
+            int failCount = 0;
+            
+            for (XianyuAccount account : accounts) {
+                if (account.getStatus() == 1) { // 只检查正常状态的账号
+                    try {
+                        // 参考Python: 通过hasLogin保持Cookie活跃
+                        boolean loginOk = cookieRefreshService.checkLoginStatus(account.getId());
+                        if (loginOk) {
+                            successCount++;
+                            log.debug("【账号{}】Cookie保活成功", account.getId());
+                        } else {
+                            failCount++;
+                            log.warn("【账号{}】Cookie保活失败，Cookie可能已过期", account.getId());
+                        }
+                    } catch (Exception e) {
+                        failCount++;
+                        log.warn("【账号{}】Cookie保活异常: {}", account.getId(), e.getMessage());
+                    }
+                    
+                    // 随机间隔2-5秒，避免频繁请求
+                    int randomInterval = 2000 + new java.util.Random().nextInt(3001);
+                    Thread.sleep(randomInterval);
+                }
+            }
+            
+            log.info("✅ Cookie保活检查完成: 成功{}个, 失败{}个", successCount, failCount);
+            
+        } catch (Exception e) {
+            log.error("定期Cookie保活检查失败", e);
+        }
+    }
+
+    /**
      * 定时任务：检查并刷新WebSocket token
      * 与Python完全一致：每分钟检查一次，1小时刷新一次
      */
