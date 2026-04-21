@@ -4,6 +4,9 @@ import { RouterView, useRoute } from 'vue-router'
 
 const route = useRoute()
 
+// 是否为登录页（不显示侧边栏）
+const isLoginPage = computed(() => route.path === '/login')
+
 // 响应式导航栏状态
 const isMobile = ref(false)
 const drawerVisible = ref(false)
@@ -19,7 +22,8 @@ const pageTitleMap: Record<string, string> = {
   '/messages': '消息管理',
   '/auto-delivery': '自动发货',
   '/auto-reply': '自动回复',
-  '/operation-log': '操作日志'
+  '/operation-log': '操作日志',
+  '/settings': '系统设置'
 }
 
 // 当前页面标题
@@ -55,6 +59,13 @@ onUnmounted(() => {
 
 <template>
   <div class="app-container">
+    <!-- 登录页：全屏覆盖 -->
+    <div v-show="isLoginPage" class="login-wrapper">
+      <RouterView />
+    </div>
+
+    <!-- 主应用布局 -->
+    <div v-show="!isLoginPage" class="app-layout">
     <!-- 手机端: 顶部导航栏 -->
     <div v-if="isMobile" class="mobile-header">
       <el-button
@@ -118,6 +129,9 @@ onUnmounted(() => {
             <el-menu-item index="/operation-log">
               <span>📜 操作日志</span>
             </el-menu-item>
+            <el-menu-item index="/settings">
+              <span>⚙️ 系统设置</span>
+            </el-menu-item>
           </el-menu>
         </div>
       </div>
@@ -168,6 +182,9 @@ onUnmounted(() => {
           <el-menu-item index="/operation-log">
             <span>📜 操作日志</span>
           </el-menu-item>
+          <el-menu-item index="/settings">
+            <span>⚙️ 系统设置</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -184,6 +201,7 @@ onUnmounted(() => {
         <RouterView />
       </el-main>
     </el-container>
+    </div>
   </div>
 </template>
 
@@ -191,6 +209,20 @@ onUnmounted(() => {
 .app-container {
   height: 100vh;
   background: #e8e8e8;
+}
+
+.login-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  background: #e8e8e8;
+}
+
+.app-layout {
+  height: 100%;
 }
 
 .el-container {

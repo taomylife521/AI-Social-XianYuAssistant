@@ -1,8 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isLoggedIn } from '@/utils/request'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/login/index.vue'),
+      meta: { title: '登录', public: true }
+    },
     {
       path: '/',
       redirect: '/dashboard'
@@ -68,12 +75,27 @@ const router = createRouter({
       meta: { title: '操作记录', icon: '📜' }
     },
     {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('@/views/settings/index.vue'),
+      meta: { title: '系统设置', icon: '⚙️' }
+    },
+    {
       path: '/qrlogin',
       name: 'qrlogin',
       component: () => import('@/views/qrlogin/index.vue'),
       meta: { title: '扫码登录', icon: '📱' }
     }
   ]
+})
+
+// 路由守卫：未登录跳转登录页
+router.beforeEach((to, _from, next) => {
+  if (to.meta.public || isLoggedIn()) {
+    next()
+  } else {
+    next('/login')
+  }
 })
 
 export default router

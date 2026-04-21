@@ -1,3 +1,5 @@
+import { getAuthToken } from '@/utils/request'
+
 // AI 对话请求
 export interface ChatWithAIReq {
   msg: string
@@ -18,6 +20,18 @@ export interface RAGDataItem {
   createTime: string
 }
 
+/** 构建带Token的headers */
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  }
+  const token = getAuthToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  return headers
+}
+
 // AI 对话 (SSE 流式)
 // 后端 AIChatController 的 @RequestMapping 是 "/ai"（无 /api 前缀），
 // 与其他控制器 @RequestMapping("/api/xxx") 不同，
@@ -25,9 +39,7 @@ export interface RAGDataItem {
 export function chatWithAI(data: ChatWithAIReq): Promise<Response> {
   return fetch('/ai/chat', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: authHeaders(),
     body: JSON.stringify(data)
   })
 }
@@ -36,9 +48,7 @@ export function chatWithAI(data: ChatWithAIReq): Promise<Response> {
 export function putNewDataToRAG(data: PutNewDataReq): Promise<Response> {
   return fetch('/ai/putNewData', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: authHeaders(),
     body: JSON.stringify(data)
   })
 }
@@ -47,9 +57,7 @@ export function putNewDataToRAG(data: PutNewDataReq): Promise<Response> {
 export function queryRAGData(data: { goodsId: string }): Promise<Response> {
   return fetch('/ai/queryRAGData', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: authHeaders(),
     body: JSON.stringify(data)
   })
 }
@@ -58,9 +66,7 @@ export function queryRAGData(data: { goodsId: string }): Promise<Response> {
 export function deleteRAGData(data: { documentId: string }): Promise<Response> {
   return fetch('/ai/deleteRAGData', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: authHeaders(),
     body: JSON.stringify(data)
   })
 }

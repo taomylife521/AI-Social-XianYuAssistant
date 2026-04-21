@@ -1,3 +1,49 @@
+-- 系统用户表
+CREATE TABLE IF NOT EXISTS sys_user (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username VARCHAR(50) NOT NULL UNIQUE,              -- 用户名
+    password VARCHAR(200) NOT NULL,                    -- 密码（BCrypt加密）
+    status TINYINT DEFAULT 1,                          -- 状态 1:正常 0:禁用
+    last_login_time DATETIME,                          -- 最后登录时间
+    last_login_ip VARCHAR(50),                         -- 最后登录IP
+    created_time DATETIME DEFAULT (datetime('now', 'localtime')),  -- 创建时间
+    updated_time DATETIME DEFAULT (datetime('now', 'localtime'))   -- 更新时间
+);
+
+-- 登录Token表
+CREATE TABLE IF NOT EXISTS sys_login_token (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id BIGINT NOT NULL,                           -- 关联用户ID
+    token VARCHAR(500) NOT NULL,                       -- JWT Token
+    device_id VARCHAR(100),                            -- 设备标识（User-Agent哈希）
+    login_ip VARCHAR(50),                              -- 登录IP
+    expire_time DATETIME NOT NULL,                     -- 过期时间
+    created_time DATETIME DEFAULT (datetime('now', 'localtime')),  -- 创建时间
+    updated_time DATETIME DEFAULT (datetime('now', 'localtime')),  -- 更新时间
+    FOREIGN KEY (user_id) REFERENCES sys_user(id)
+);
+
+-- 索引
+CREATE INDEX IF NOT EXISTS idx_sys_user_username ON sys_user(username);
+CREATE INDEX IF NOT EXISTS idx_sys_login_token_user_id ON sys_login_token(user_id);
+CREATE INDEX IF NOT EXISTS idx_sys_login_token_token ON sys_login_token(token);
+CREATE INDEX IF NOT EXISTS idx_sys_login_token_expire_time ON sys_login_token(expire_time);
+
+-- 触发器
+CREATE TRIGGER IF NOT EXISTS update_sys_user_time
+AFTER UPDATE ON sys_user
+BEGIN
+    UPDATE sys_user SET updated_time = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END
+$
+
+CREATE TRIGGER IF NOT EXISTS update_sys_login_token_time
+AFTER UPDATE ON sys_login_token
+BEGIN
+    UPDATE sys_login_token SET updated_time = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END
+$
+
 -- 闲鱼账号表
 CREATE TABLE IF NOT EXISTS xianyu_account (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

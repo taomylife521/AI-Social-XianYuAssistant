@@ -5,6 +5,11 @@ server:
 ai:
   enabled: true
 
+# JWT配置
+jwt:
+  secret: xianyu-assistant-jwt-secret-key-2026-04-22-very-long-secret-for-hmac-sha
+  expiration: 2592000000  # 30天（毫秒）
+
 
 spring:
   datasource:
