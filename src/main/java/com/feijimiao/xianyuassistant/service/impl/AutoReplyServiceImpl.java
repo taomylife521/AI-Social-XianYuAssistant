@@ -1,6 +1,7 @@
 package com.feijimiao.xianyuassistant.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.feijimiao.xianyuassistant.config.rag.DynamicAIChatClientManager;
 import com.feijimiao.xianyuassistant.entity.XianyuGoodsAutoReplyConfig;
 import com.feijimiao.xianyuassistant.entity.XianyuGoodsAutoReplyRecord;
 import com.feijimiao.xianyuassistant.entity.XianyuGoodsConfig;
@@ -15,7 +16,6 @@ import com.feijimiao.xianyuassistant.service.AutoReplyService;
 import com.feijimiao.xianyuassistant.service.WebSocketService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -49,9 +49,9 @@ public class AutoReplyServiceImpl implements AutoReplyService {
     
     @Autowired(required = false)
     private AIService aiService;
-    
-    @Value("${ai.enabled:false}")
-    private boolean aiEnabled;
+
+    @Autowired
+    private DynamicAIChatClientManager dynamicAIChatClientManager;
     
     /**
      * RAG回复类型
@@ -76,8 +76,8 @@ public class AutoReplyServiceImpl implements AutoReplyService {
         
         try {
             // 1. 检查AI服务是否可用
-            if (!aiEnabled || aiService == null) {
-                log.warn("【账号{}】AI服务未启用或不可用，跳过RAG自动回复", accountId);
+            if (!dynamicAIChatClientManager.isAvailable() || aiService == null) {
+                log.warn("【账号{}】AI服务未启用或API Key未配置，跳过RAG自动回复", accountId);
                 return;
             }
             

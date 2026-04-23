@@ -406,3 +406,15 @@ INSERT OR IGNORE INTO xianyu_sys_setting (setting_key, setting_value, setting_de
 VALUES ('sys_prompt', '你是一个闲鱼卖家，你叫肥极喵，不要回复的像AI，简短回答
 参考相关信息回答,不要乱回答,不知道就换不同语气回复提示用户详细点询问', 'AI智能回复的系统提示词');
 
+-- AI API Key配置（初始为空，用户在前端设置页面配置后生效）
+INSERT OR IGNORE INTO xianyu_sys_setting (setting_key, setting_value, setting_desc)
+VALUES ('ai_api_key', '', 'AI服务的API Key（配置后立即生效，无需重启）');
+
+-- AI API Base URL配置
+INSERT OR IGNORE INTO xianyu_sys_setting (setting_key, setting_value, setting_desc)
+VALUES ('ai_base_url', 'https://dashscope.aliyuncs.com/compatible-mode', 'AI服务的API Base URL');
+
+-- AI 模型配置
+INSERT OR IGNORE INTO xianyu_sys_setting (setting_key, setting_value, setting_desc)
+VALUES ('ai_model', 'deepseek-v3', 'AI对话模型名称');
+

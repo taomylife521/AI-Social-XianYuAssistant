@@ -147,11 +147,12 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
-        <!-- Spring AI - Chroma Vector Store -->
+        <!-- Spring AI - Vector Store (包含 SimpleVectorStore) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-vector-store-chroma</artifactId>
+            <artifactId>spring-ai-vector-store</artifactId>
         </dependency>
+
     </dependencies>
 
     <build>

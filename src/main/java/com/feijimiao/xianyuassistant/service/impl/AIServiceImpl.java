@@ -1,5 +1,7 @@
 package com.feijimiao.xianyuassistant.service.impl;
 
+import com.feijimiao.xianyuassistant.config.rag.DynamicAIChatClientManager;
+import com.feijimiao.xianyuassistant.config.rag.DynamicVectorStoreManager;
 import com.feijimiao.xianyuassistant.service.AIService;
 import com.feijimiao.xianyuassistant.service.SysSettingService;
 import com.feijimiao.xianyuassistant.service.bo.RAGDataRespBO;
@@ -10,8 +12,6 @@ import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -23,14 +23,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
+ * AI服务实现
+ * 使用 DynamicAIChatClientManager 动态获取 ChatClient
+ * 使用 DynamicVectorStoreManager 动态获取 VectorStore
+ * API Key 未配置时自动降级，返回提示信息
+ *
  * @author IAMLZY
  * @date 2026/4/10 22:26
- * @description AI服务实现，仅在ai.enabled=true时加载
  */
 
 @Service
 @Slf4j
-@ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
 public class AIServiceImpl implements AIService {
 
     /** 系统提示词配置键 */
@@ -39,40 +42,62 @@ public class AIServiceImpl implements AIService {
     /** 默认系统提示词 */
     private static final String DEFAULT_SYS_PROMPT = "你是一个闲鱼卖家，你叫肥极喵，不要回复的像AI，简短回答\n参考相关信息回答,不要乱回答,不知道就换不同语气回复提示用户详细点询问";
 
-    @Autowired
-    @Qualifier("XianYuChatClient")
-    ChatClient chatClient;
+    /** AI不可用时的降级提示 */
+    private static final String AI_NOT_AVAILABLE_MSG = "AI服务暂未配置，请在系统设置中配置API Key后再试";
 
     @Autowired
-    private VectorStore vectorStore;
+    private DynamicAIChatClientManager dynamicAIChatClientManager;
+
+    @Autowired
+    private DynamicVectorStoreManager dynamicVectorStoreManager;
 
     @Autowired
     private SysSettingService sysSettingService;
 
     @Override
-    public Flux<String> chatByRAG(String prompt,String goodsId) {
+    public Flux<String> chatByRAG(String prompt, String goodsId) {
         long startTime = System.currentTimeMillis();
         log.info("[AI Chat] 收到请求, prompt={}, goodsId={}", prompt, goodsId);
 
-        // 1. 先从向量库搜索相关内容
+        // 1. 检查AI是否可用
+        ChatClient chatClient = dynamicAIChatClientManager.getChatClient();
+        if (chatClient == null) {
+            log.warn("[AI Chat] AI服务不可用，返回降级提示");
+            return Flux.just(AI_NOT_AVAILABLE_MSG);
+        }
+
+        // 2. 获取向量库（动态初始化）
+        VectorStore vectorStore = dynamicVectorStoreManager.getVectorStore();
+        if (vectorStore == null) {
+            log.warn("[AI Chat] 向量库未初始化，使用无上下文模式");
+            return chatWithoutContext(chatClient, prompt, startTime);
+        }
+
+        // 3. 先从向量库搜索相关内容
         long searchStart = System.currentTimeMillis();
-        List<Document> documents = vectorStore.similaritySearch(
-                SearchRequest.builder()
-                        .query(prompt)
-                        .topK(5)
-                        .similarityThreshold(0.1)
-                        .filterExpression(String.format("goodsId == '%s'",goodsId))
-                        .build()
-        );
+        List<Document> documents;
+        try {
+            documents = vectorStore.similaritySearch(
+                    SearchRequest.builder()
+                            .query(prompt)
+                            .topK(5)
+                            .similarityThreshold(0.1)
+                            .filterExpression(String.format("goodsId == '%s'", goodsId))
+                            .build()
+            );
+        } catch (Exception e) {
+            log.warn("[AI Chat] 向量搜索失败，使用无上下文模式: {}", e.getMessage());
+            return chatWithoutContext(chatClient, prompt, startTime);
+        }
         long searchCost = System.currentTimeMillis() - searchStart;
         log.info("[AI Chat] 向量搜索耗时: {}ms, 命中文档数: {}", searchCost, documents.size());
 
-        // 2. 把搜索结果拼成上下文
+        // 4. 把搜索结果拼成上下文
         String context = documents.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n---\n"));
 
-        // 3. 从系统配置中获取系统提示词
+        // 5. 从系统配置中获取系统提示词
         String sysPrompt = sysSettingService.getSettingValue(SYS_PROMPT_KEY);
         if (sysPrompt == null || sysPrompt.trim().isEmpty()) {
             sysPrompt = DEFAULT_SYS_PROMPT;
@@ -81,7 +106,7 @@ public class AIServiceImpl implements AIService {
             log.info("[AI Chat] 使用自定义系统提示词");
         }
 
-        // 4. 构建用户消息（参考资料 + 用户问题）
+        // 6. 构建用户消息（参考资料 + 用户问题）
         String userMessage = String.format("""
                 参考资料：
                 %s
@@ -91,11 +116,8 @@ public class AIServiceImpl implements AIService {
 
         long llmStart = System.currentTimeMillis();
         log.info("[AI Chat] 准备调用LLM, 总预处理耗时: {}ms", llmStart - startTime);
-        log.info("[AI Chat] LLM请求参数 - model: deepseek-v3, temperature: 0.7, goodsId: {}", goodsId);
-        log.info("[AI Chat] 系统提示词:\n{}", sysPrompt);
-        log.info("[AI Chat] 用户消息:\n{}", userMessage);
 
-        // 5. 请求大模型，流式返回
+        // 7. 请求大模型，流式返回
         AtomicBoolean firstTokenLogged = new AtomicBoolean(false);
         return chatClient.prompt()
                 .system(sysPrompt)
@@ -110,34 +132,69 @@ public class AIServiceImpl implements AIService {
                 });
     }
 
+    /**
+     * 无上下文模式聊天（向量库不可用时的降级方案）
+     */
+    private Flux<String> chatWithoutContext(ChatClient chatClient, String prompt, long startTime) {
+        String sysPrompt = sysSettingService.getSettingValue(SYS_PROMPT_KEY);
+        if (sysPrompt == null || sysPrompt.trim().isEmpty()) {
+            sysPrompt = DEFAULT_SYS_PROMPT;
+        }
+
+        long llmStart = System.currentTimeMillis();
+        log.info("[AI Chat] 使用无上下文模式, 预处理耗时: {}ms", llmStart - startTime);
+
+        AtomicBoolean firstTokenLogged = new AtomicBoolean(false);
+        return chatClient.prompt()
+                .system(sysPrompt)
+                .user(prompt)
+                .stream()
+                .content()
+                .doOnNext(token -> {
+                    if (firstTokenLogged.compareAndSet(false, true)) {
+                        long firstTokenCost = System.currentTimeMillis() - llmStart;
+                        log.info("[AI Chat] 首 token 耗时: {}ms", firstTokenCost);
+                    }
+                });
+    }
+
     @Override
     public void putDataToRAG(String content, String goodsId) {
-        log.info("[AI RAG] 写入Chroma, goodsId={}, 内容长度={}字符, 内容={}", goodsId, content.length(), content);
+        VectorStore vectorStore = dynamicVectorStoreManager.getVectorStore();
+        if (vectorStore == null) {
+            log.warn("[AI RAG] 向量库未初始化，无法写入数据");
+            throw new RuntimeException("向量库未初始化，请检查AI配置是否正确");
+        }
 
-        Map<String,Object> metadata = new HashMap<>();
-        metadata.put("goodsId",goodsId);
-        metadata.put("createTime",new Date());
+        log.info("[AI RAG] 写入SimpleVectorStore, goodsId={}, 内容长度={}字符", goodsId, content.length());
 
-        Document document = new Document(content,metadata);
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("goodsId", goodsId);
+        metadata.put("createTime", new Date());
 
-        // 自动切片，默认配置参数：
-        //         800,    // defaultChunkSize     每个 chunk 的 token 数
-        //        350,    // minChunkSizeChars    最小 chunk 字符数
-        //        5,      // minChunkLengthToEmbed 低于此 token 数的 chunk 会被丢弃
-        //        10000,  // maxNumChunks         最大 chunk 数量
-        //        true    // keepSeparator        是否保留分隔符
+        Document document = new Document(content, metadata);
+
         TokenTextSplitter splitter = new TokenTextSplitter();
         List<Document> chunks = splitter.apply(List.of(document));
-        log.info("[AI RAG] 切片完成, 切片数={}, 写入Chroma...", chunks.size());
+        log.info("[AI RAG] 切片完成, 切片数={}, 写入SimpleVectorStore...", chunks.size());
         vectorStore.add(chunks);
-        log.info("[AI RAG] 写入Chroma完成");
+
+        // 持久化保存到文件
+        dynamicVectorStoreManager.saveToFile();
+
+        log.info("[AI RAG] 写入SimpleVectorStore完成");
     }
 
     @Override
     public List<RAGDataRespBO> queryRAGDataBygoodsId(String goodsId) {
-        log.info("[AI RAG] 查询Chroma数据, goodsId={}", goodsId);
+        VectorStore vectorStore = dynamicVectorStoreManager.getVectorStore();
+        if (vectorStore == null) {
+            log.warn("[AI RAG] 向量库未初始化，无法查询数据");
+            throw new RuntimeException("向量库未初始化，请检查AI配置是否正确");
+        }
 
-        // 用宽泛查询 + 低阈值 + goodsId过滤，获取该商品的所有向量数据
+        log.info("[AI RAG] 查询SimpleVectorStore数据, goodsId={}", goodsId);
+
         List<Document> documents = vectorStore.similaritySearch(
                 SearchRequest.builder()
                         .query("")
@@ -157,14 +214,24 @@ public class AIServiceImpl implements AIService {
             return bo;
         }).collect(Collectors.toList());
 
-        log.info("[AI RAG] 查询Chroma数据完成, goodsId={}, 结果数={}", goodsId, result.size());
+        log.info("[AI RAG] 查询SimpleVectorStore数据完成, goodsId={}, 结果数={}", goodsId, result.size());
         return result;
     }
 
     @Override
     public void deleteRAGDataByDocumentId(String documentId) {
-        log.info("[AI RAG] 删除Chroma数据, documentId={}", documentId);
+        VectorStore vectorStore = dynamicVectorStoreManager.getVectorStore();
+        if (vectorStore == null) {
+            log.warn("[AI RAG] 向量库未初始化，无法删除数据");
+            throw new RuntimeException("向量库未初始化，请检查AI配置是否正确");
+        }
+
+        log.info("[AI RAG] 删除SimpleVectorStore数据, documentId={}", documentId);
         vectorStore.delete(List.of(documentId));
-        log.info("[AI RAG] 删除Chroma数据完成, documentId={}", documentId);
+
+        // 持久化保存到文件
+        dynamicVectorStoreManager.saveToFile();
+
+        log.info("[AI RAG] 删除SimpleVectorStore数据完成, documentId={}", documentId);
     }
 }
